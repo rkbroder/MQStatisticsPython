@@ -1,0 +1,7 @@
+Write
+
+amqsblst BOBBEE BOBBEE2_IN_REMOTE -W -s 1024 -c 200000 -u 1
+
+Read
+
+amqsblst BOBBEE BOBBEE_OUT -R

@@ -14,3 +14,6 @@ The scripts use MQ base commands (INQ Channels Stats, INQ Queue Stats) and also 
 
 The scripts show how to execute the commands and parse through the data. The end result will be an output CSV file that can
 be imported into EXCEL.
+
+Note (2023-07-07) 
+queue.stats_CS.py is the current queue.stats.py with the added code to connect either Client or Server. As the code in the other scripts were built from this script the same changes can be made to the other scripts.

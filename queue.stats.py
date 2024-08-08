@@ -20,7 +20,18 @@ except ImportError:
     import pymqe # type: ignore # Backward compatibility
 from pymqi import CMQCFC
 from pymqi import CMQC, CMQXC, CMQZC
-
+#############################################################################
+###                                                                       ###
+### Change Log        :                                                   ###
+### 09/2023 - added code to perform Client or Server side connect based on###
+###           properties file. Python usually installs as a CLIENT        ###
+###           implementation. For SERVER, you have to override and        ###
+###           recompile the MQPYI modules.                                ###
+### 08/2024 - Updated the CSV data. ENQ and DEQ from the Queue was missing###
+###           Important to determine performance. There was a metric      ###
+###           misalignment and PUT1's we not being calculates correct     ###
+###                                                                       ###
+#############################################################################
 #############################################################################
 ###                                                                       ###
 ### Static definations:                                                   ###
@@ -170,7 +181,10 @@ def queue_get_stats(queueManager, qname):
         if 'MQGET byte count' in x:
             x=x.strip()
             list1=x.split(" ");
-            mqgetbytecount = list1[-1]
+            if '/sec' in x:
+              mqgetbytecount = list1[-2]
+            else:
+            	mqgetbytecount = list1[-1]
             logger.info('MQS-MQH-003 -         MQGET Byte Count =  {a}' .format(a=mqgetbytecount))
             count=count+1
             continue   
@@ -473,7 +487,9 @@ def collect_queue_stats(queueManager):
     else:
        logger.debug('MQS-MQH-002 - Statistics file DOES NOT exists = {a}' .format(a=filename))
        qstatsreport = open(filename, "w")
-       outputL="queueName, creationDate, creationTime,queueType,definationType,queueMinDepth,queueMaxDepth,avgQueueTime,puts,putsFailed,puts1,puts1Failed,putBytes,gets,getBytes,getsFailed,browses,browseBytes,browseFailed,msgNotQueued,msgsExpired,msgPurged,Qmgr,Timestamp" + "\n"
+       outputL="queueName, creationDate, creationTime,queueType,definationType,queueMinDepth,queueMaxDepth,msgdeqcount,msgenqcount,avgQueueTime,puts,putsFailed,puts1,putBytes,gets,getBytes,getsFailed,browses,browseBytes,browseFailed,msgNotQueued,msgsExpired,msgPurged,Qmgr,Timestamp" + "\n"
+
+####   outputL="queueName, creationDate, creationTime,queueType,definationType,queueMinDepth,queueMaxDepth,avgQueueTime,puts,putsFailed,puts1,putBytes,gets,getBytes,getsFailed,browses,browseBytes,browseFailed,msgNotQueued,msgsExpired,msgPurged,Qmgr,Timestamp" + "\n"
        qstatsreport.write(outputL)   
     count=0
     tag=False
@@ -515,7 +531,7 @@ def collect_queue_stats(queueManager):
                 logger.info('MQS-MQH-002 -         Creation Time = {a}' .format(a=creationtime))
                 qdefinationtypeINT=queue_info[pymqi.CMQC.MQIA_DEFINITION_TYPE]
                 #
-                #### translate channel type INT into string
+                #### translate queue type INT into string
                 #
                 d = _MQConst2String(CMQC, 'MQQDT_')
                 if qdefinationtypeINT in d:
@@ -525,9 +541,10 @@ def collect_queue_stats(queueManager):
                 else:
                     logger.debug('MQS-MQH-002 -         Queue Defination Type = {a}' .format(a=qdefinationtypeINT))
                     logger.info('MQS-MQH-002 -          Queue Defination Type = {a}' .format(a=qdefinationtypeINT))
+                    qdefinationtype = srt(qdefinationtypeINT)
                 qtypeINT=queue_info[pymqi.CMQC.MQIA_Q_TYPE]
                 #
-                #### translate channel type INT into string
+                #### translate queue type INT into string
                 #
                 d = _MQConst2String(CMQC, 'MQQT_')
                 if qtypeINT in d:
@@ -536,6 +553,7 @@ def collect_queue_stats(queueManager):
                 else:
                     logger.debug('MQS-MQH-002 -         Queue Type = {a}' .format(a=qtypeINT))
                     logger.info('MQS-MQH-002 -          Queue Type = {a}' .format(a=qtypeINT))
+                    qtype=str(qtypeINT)
 
 ###
 ### Issure RESET STATS on Queue
@@ -571,6 +589,12 @@ def collect_queue_stats(queueManager):
                       logger.info('MQS-MQH-002 -         DEQ Count = {a}' .format(a=msgdeqcount))
                       logger.debug('MQS-MQH-002 -         Queue Manager Name = {a}' .format(a=queueManager))
 ###
+### get MQIA_MSG_ENQ_COUNT
+###
+                      msgenqcount=queue_info[pymqi.CMQC.MQIA_MSG_ENQ_COUNT]
+                      logger.info('MQS-MQH-002 -         ENQ Count = {a}' .format(a=msgenqcount))
+                      logger.debug('MQS-MQH-002 -         Queue Manager Name = {a}' .format(a=queueManager))
+###
 ### Get the PUT and GET Queue Statistics
 ###
                       queue_get_stats(queueManager, queue_name)
@@ -583,28 +607,54 @@ def collect_queue_stats(queueManager):
             browseFailed = mqgetbrfail2033 + mqgetbrfail2080 + mqgetbrfail
 
             msgNotQueued = 'none'
+###
+### The following are fields returned sometimes as none (null) from the MQ API calls. Set them for ouput
+###        
+            if queuedepth is None:
+               queuedepth=0
+               logger.info('MQS-MQH-002 -         queuedepth = None')	
+            if queueavgtime is None:
+               queueavgtime=0
+               logger.info('MQS-MQH-002 -         queueavgtime = None')
+            if expiredmessages is None:
+               expiredmessages=0
+               logger.info('MQS-MQH-002 -         expiredmessages = None') 
+            if queuepurgcount is None:
+               queuepurgcount=0
+               logger.info('MQS-MQH-002 -         queuepurgcount = None') 
             dt = datetime.now()
+            logger.debug('MQS-MQH-002 - queue_name = {a}' .format(a=type(queue_name)))
             logger.debug('MQS-MQH-002 - creationdate = {a}' .format(a=type(creationdate)))
             logger.debug('MQS-MQH-002 - creationtime = {a}' .format(a=type(creationtime)))
-            logger.debug('MQS-MQH-002 - qdefinationtype = {a}' .format(a=type(qdefinationtype)))
+            logger.debug('MQS-MQH-002 - qtype = {a}' .format(a=type(qtype)))    
+            logger.debug('MQS-MQH-002 - qdefinationtype = {a}' .format(a=type(qdefinationtype)))        
             logger.debug('MQS-MQH-002 - queuedepth = {a}' .format(a=type(queuedepth)))
             logger.debug('MQS-MQH-002 - highdepth = {a}' .format(a=type(highdepth)))
+            logger.debug('MQS-MQH-002 - msgdeqcount = {a}' .format(a=type(msgdeqcount)))
+            logger.debug('MQS-MQH-002 - msgenqcount = {a}' .format(a=type(msgenqcount)))
             logger.debug('MQS-MQH-002 - queueavgtime = {a}' .format(a=type(queueavgtime)))
+            logger.debug('MQS-MQH-002 - mqput1npcount = {a}' .format(a=type(mqput1npcount)))
+            logger.debug('MQS-MQH-002 - mqput1pcount = {a}' .format(a=type(mqput1pcount)))
             logger.debug('MQS-MQH-002 - mqputcount = {a}' .format(a=type(mqputcount)))
             logger.debug('MQS-MQH-002 - mqputbackoutcount = {a}' .format(a=type(mqputbackoutcount)))
             logger.debug('MQS-MQH-002 - mqputbytecount = {a}' .format(a=type(mqputbytecount)))
             logger.debug('MQS-MQH-002 - mqgetcount = {a}' .format(a=type(mqgetcount)))
             logger.debug('MQS-MQH-002 - mqgetbytecount = {a}' .format(a=type(mqgetbytecount)))
             logger.debug('MQS-MQH-002 - mqgetdestfail = {a}' .format(a=type(mqgetdestfail)))
+            logger.debug('MQS-MQH-002 - browses = {a}' .format(a=type(browses)))
+            logger.debug('MQS-MQH-002 - browseBytes = {a}' .format(a=type(browseBytes)))
+            logger.debug('MQS-MQH-002 - browseFailed = {a}' .format(a=type(browseFailed)))
             logger.debug('MQS-MQH-002 - msgNotQueued = {a}' .format(a=type(msgNotQueued)))
             logger.debug('MQS-MQH-002 - expiredmessages = {a}' .format(a=type(expiredmessages)))
             logger.debug('MQS-MQH-002 - queuepurgcount = {a}' .format(a=type(queuepurgcount)))
+            logger.debug('MQS-MQH-002 - queueManager = {a}' .format(a=type(queueManager)))
             logger.debug('MQS-MQH-002 - dt = {a}' .format(a=type(dt)))
                         
 ###
 ### Build and output the CSV report line from the captured Statistics
-###          
-            outputL=queue_name + ',' + creationdate + ',' + creationtime + ',' + qdefinationtype + ',' + queuedepth + ',' + str(highdepth) + ',' + queueavgtime + ',' + mqputcount + ',' + mqputbackoutcount + ',' + mqputbytecount + ',' + mqgetcount + ',' + mqgetbytecount + ',' + mqgetdestfail + ',' + str(browses) + ',' + str(browseBytes) + ',' + str(browseFailed) + ',' + msgNotQueued + ',' + expiredmessages + ',' + queuepurgcount + ',' + queueManager + ',' + str(dt) +"\n"
+###  
+            puts1count=mqput1npcount=mqput1pcount    
+            outputL=queue_name + ',' + creationdate + ',' + creationtime + ',' + qtype + ',' + qdefinationtype + ',' + str(queuedepth) + ',' + str(highdepth) + ','  + str(msgdeqcount) + ','  + str(msgenqcount) + ',' + str(queueavgtime) + ',' + mqputcount + ',' + mqputbackoutcount + ','  + str(puts1count) + ','+ mqputbytecount + ',' + mqgetcount + ',' + mqgetbytecount + ',' + mqgetdestfail + ',' + str(browses) + ',' + str(browseBytes) + ',' + str(browseFailed) + ',' + msgNotQueued + ',' + str(expiredmessages) + ',' + str(queuepurgcount) + ',' + queueManager + ',' + str(dt) + "\n"
             qstatsreport.write(outputL)   
     qstatsreport.close()
     return rc 
@@ -612,29 +662,122 @@ def collect_queue_stats(queueManager):
 ###############################################################################
 ###                                                                         ###
 ###                        connect_queue_manager()                          ###
-### Connect to the Queue manager non-Client                                 ###
+### This function provides the code to connect to the QMGR.                 ###
+### It looks via a client     ###
+### connection. This is the default build for PYMQI. It requires key values ###
+### in the config.property file. IT can also connect using SSL provided a   ###
+### valid KEY DB is suplied.                                                ###
+### Stanza:                                                                 ###
+###    [MQConnection]                                                       ###
+###    qmgr=                                                                ###
+###    ssl= (NO/YES)                                                        ###
+###    host=                                                                ###
+###    port=                                                                ###
+###    channel=                                                             ###                     
+###    cipher=                                                              ###
+###    repos= (path to KDB)                                                 ###                       
 ###                                                                         ###
 ###############################################################################
 def connect_queue_manager(queueManager):
-  rc=True
-  
-  try:
-    logger.debug('MQS-MQH-000 - About to connect to queue manager = {a}' .format(a=queueManager))
 ###
-### This method does a SERVIC connection to the QMGR. The PYMQI package has been compile
+### Check for connecion stanza (MQConnection), If it exists we are doing a 
+### CLIENT connection and will ignore the queueManager parameter as it will be
+### in the config.properties file.
+###
+
+  if config.has_section('MQConnection'):
+      logger.debug('MQS-MQH-009 - Section MQConnection exist. We will run with that!')
+      mq_connection_property = get_config_dict('MQConnection')
+      logger.debug('MQS-MQH-000 - Connection Property = {a}' .format(a=mq_connection_property))
+      property_found=True
+      mq_connection_property = get_config_dict('MQConnection')
+      logger.debug('MQS-MQH-000 - Connection Property = {a}' .format(a=mq_connection_property))
+      qmgr=mq_connection_property.get("qmgr")
+      ssl=mq_connection_property.get("ssl")
+      host=mq_connection_property.get("ip")
+      port=mq_connection_property.get("port")
+      channel=mq_connection_property.get("channel")
+      ssl_asbytes=str.encode(ssl)
+      host_asbytes=str.encode(host)
+      port_asbytes=str.encode(port)
+      channel_asbytes=str.encode(channel)
+      logger.debug('MQS-MQH-000 - MQ Connection Information /n Host = {a} /n Port = {b} /n Queue Manager = {c} /n Channel = {d}' .format(a=host, b=port, c=queueManager, d=channel))
+###
+### Check for ssl property to see if we are going to connect usig SSL
+###
+      logger.debug('MQS-MQH-000 - ssl flag = {a}' .format(a=ssl))
+      if ssl == 'NO':
+        conn_info = '%s(%s)' % (host, port)
+        try:
+          logger.debug('MQS-MQH-000 - About to connect to queue manager = {a}' .format(a=queueManager))
+          qmgr = pymqi.connect(queueManager, channel, conn_info)
+          rc=True
+        except pymqi.MQMIError as e:
+          if e.comp == pymqi.CMQC.MQCC_FAILED and e.reason == pymqi.CMQC.MQRC_HOST_NOT_AVAILABLE:
+            logger.error('MQS-MQH-000 - Such a host `%s` does not exist.' % host)
+            logger.critical('MQS-MQH-000 - Reason code from connection attempt = {a}' .format(a=e.reason))
+            rc=False
+          else:
+      	    rc=False
+      	    logger.critical('MQS-MQH-000 - Other Connect Error')
+      	    logger.critical('MQS-MQH-000 - Reason code from connection attempt = {a}' .format(a=e.reason))
+      	    raise
+      else:
+        conn_info = '%s(%s)' % (host, port)
+        conn_info_asbytes=str.encode(conn_info)
+        ssl_cipher_spec = mq_connection_property.get("cipher")
+        ssl_cipher_spec_asbytes=str.encode(ssl_cipher_spec)
+        repos = mq_connection_property.get("repos")
+        repos_asbytes=str.encode(repos)
+        cd = pymqi.CD()
+        cd.ChannelName = channel_asbytes
+        cd.ConnectionName = conn_info_asbytes
+        cd.ChannelType = pymqi.CMQXC.MQCHT_CLNTCONN
+        cd.TransportType = pymqi.CMQXC.MQXPT_TCP
+        cd.SSLCipherSpec = ssl_cipher_spec_asbytes
+        options = CMQC.MQCNO_NONE
+        cd.UserIdentifier = str.encode('mqm')
+        cd.Password = str.encode('mqm')
+        sco = pymqi.SCO()
+        sco.KeyRepository = repos_asbytes
+        logger.debug('MQS-MQH-000 - MQ SSL Connection Information \n queueManager = {a} \n cd = {b} \n sco = {c} \n' .format(a=queueManager, b=cd, c=sco))
+#  qmgr.connect_with_options(queueManager, options, cd, sco)
+        try:
+           logger.debug('MQS-MQH-000 - About to connect_with_options to queue manager = {a}' .format(a=queueManager))
+           qmgr = pymqi.QueueManager(None)
+           qmgr = qmgr.connect_with_options(queueManager, cd, sco)
+           rc=True
+        except pymqi.MQMIError as e:
+           if e.comp == pymqi.CMQC.MQCC_FAILED and e.reason == pymqi.CMQC.MQRC_HOST_NOT_AVAILABLE:
+              logger.error('MQS-MQH-000 - Such a host `%s` does not exist.' % host)
+              logger.critical('MQS-MQH-000 - Reason code from connection attempt = {a}' .format(a=e.reason))
+              rc=False
+           else:
+      	      logger.critical('MQS-MQH-000 - Other Connect Error')
+      	      logger.critical('MQS-MQH-000 - Reason code from connection attempt = {a}' .format(a=e.reason))
+      	      rc=False
+      	      raise
+  else:
+      try:
+        logger.error('MQS-MQH-000 - Section MQConnection not found! Doing a Server connection')
+        logger.debug('MQS-MQH-000 - About to connect to queue manager = {a}' .format(a=queueManager))
+###
+### This method does a SERVER connection to the QMGR. The PYMQI package has been compile
 ### as 'BUILD SERVICE'. To do a client build the PYMQI code as client 'BUILD CLIENT' and
 ### then implement the client connection connect_queue_manager found in GITHUB.
 ###
-    qmgr = pymqi.connect(queueManager)
-  except pymqi.MQMIError as e:
-    if e.comp == pymqi.CMQC.MQCC_FAILED and e.reason == pymqi.CMQC.MQRC_HOST_NOT_AVAILABLE:
-        logger.error('MQS-MQH-000 - Such a host `%s` does not exist.' % host)
-        rc=False
-    else:
-    	rc=False
-    	logger.critical('MQS-MQH-000 - Other Connect Error')
-    	raise
+        qmgr = pymqi.connect(queueManager)
+        rc=True
+      except pymqi.MQMIError as e:
+        if e.comp == pymqi.CMQC.MQCC_FAILED and e.reason == pymqi.CMQC.MQRC_HOST_NOT_AVAILABLE:
+           logger.error('MQS-MQH-000 - Such a host `%s` does not exist.' % host)
+           rc=False
+        else:
+    	     rc=False
+    	     logger.critical('MQS-MQH-000 - Other Connect Error')
+    	     raise
   
+
   if rc:
     return qmgr
   else:
